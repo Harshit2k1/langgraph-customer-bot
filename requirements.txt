@@ -27,3 +27,6 @@ python-dotenv
 pandas
 faker
 tiktoken
+
+fastapi
+uvicorn
