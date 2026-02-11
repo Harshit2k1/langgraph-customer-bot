@@ -46,6 +46,29 @@ Use JOINs to combine data from both tables when needed. Always use proper WHERE 
                 }
             }
         ]
+
+    def _strip_tool_json_prefix(self, text: str) -> str:
+        """Remove any leading tool JSON blobs from model output."""
+        if not text:
+            return text
+
+        cleaned = text.lstrip()
+        decoder = json.JSONDecoder()
+        tool_keys = {"query", "reasoning", "success", "row_count", "results", "error"}
+
+        while cleaned:
+            try:
+                parsed, index = decoder.raw_decode(cleaned)
+            except json.JSONDecodeError:
+                break
+
+            if isinstance(parsed, dict) and tool_keys.intersection(parsed.keys()):
+                cleaned = cleaned[index:].lstrip()
+                continue
+
+            break
+
+        return cleaned
     
     def execute_sql_query(self, query, reasoning=None):
         """Execute SQL query with validation"""
@@ -123,13 +146,22 @@ Always use proper JOINs when information spans multiple tables."""
                         "name": function_name,
                         "content": json.dumps(function_response)
                     })
+
+            messages.append({
+                "role": "system",
+                "content": (
+                    "Provide a user-facing answer only. "
+                    "Do not include raw JSON, SQL, tool call arguments, or tool outputs."
+                )
+            })
             
             final_response = self.client.chat.completions.create(
                 model=Config.OPENAI_MODEL,
                 messages=messages
             )
             
-            return final_response.choices[0].message.content
+            content = final_response.choices[0].message.content
+            return self._strip_tool_json_prefix(content)
             
         except Exception as e:
             return f"Error processing query: {str(e)}"
