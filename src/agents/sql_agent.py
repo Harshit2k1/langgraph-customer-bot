@@ -48,7 +48,7 @@ Use JOINs to combine data from both tables when needed. Always use proper WHERE 
         ]
 
     def _strip_tool_json_prefix(self, text: str) -> str:
-        """Remove any leading tool JSON blobs from model output."""
+        """Remove tool JSON blobs and tool chatter from model output."""
         if not text:
             return text
 
@@ -68,7 +68,26 @@ Use JOINs to combine data from both tables when needed. Always use proper WHERE 
 
             break
 
-        return cleaned
+        filtered_lines = []
+        for line in cleaned.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                filtered_lines.append(line)
+                continue
+            if "executing sql query" in stripped.lower():
+                continue
+            if stripped.startswith("{") and stripped.endswith("}"):
+                try:
+                    parsed = json.loads(stripped)
+                    if isinstance(parsed, dict) and tool_keys.intersection(parsed.keys()):
+                        continue
+                except json.JSONDecodeError:
+                    pass
+            if any(key in stripped for key in ('"query"', '"results"', '"row_count"', '"success"')):
+                continue
+            filtered_lines.append(line)
+
+        return "\n".join(filtered_lines).strip()
     
     def execute_sql_query(self, query, reasoning=None):
         """Execute SQL query with validation"""
