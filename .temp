@@ -1,0 +1,2 @@
+PS C:\Users\mahes\Documents\Projects\langgraph-customer-bot> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+PS C:\Users\mahes\Documents\Projects\langgraph-customer-bot> .\venv\Scripts\Activate.ps1 
