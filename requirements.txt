@@ -17,6 +17,7 @@ pypdf
 fpdf2
 
 mcp
+
 pydantic
 typing-extensions
 
@@ -28,5 +29,3 @@ pandas
 faker
 tiktoken
 
-fastapi
-uvicorn
