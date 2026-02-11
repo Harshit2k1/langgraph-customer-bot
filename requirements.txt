@@ -1,37 +1,29 @@
-# Core LLM & Orchestration
 langchain
 langchain-community
 langchain-openai
+langchain-text-splitters
 langgraph
 openai
 
-# Embeddings (Local)
 sentence-transformers
 torch
 transformers
 
-# Vector Database
-chromadb
+faiss-cpu
 
-# SQL Database
 sqlalchemy
 
-# Document Processing
 pypdf
-langchain-text-splitters
+fpdf2
 
-# MCP Server
 mcp
 pydantic
 typing-extensions
 
-# UI
 streamlit
 streamlit-chat
 
-# Utilities
 python-dotenv
 pandas
 faker
 tiktoken
-fpdf
