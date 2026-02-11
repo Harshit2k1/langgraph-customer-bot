@@ -19,6 +19,11 @@ class Config:
     MEMORY_WINDOW = int(os.getenv("MEMORY_WINDOW", 5))
     
     EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
+
+    LOGGING_ENABLED = os.getenv("LOGGING_ENABLED", "true").lower() == "true"
+    _LOG_LEVEL_RAW = os.getenv("LOGGING_LEVEL", "INFO").upper()
+    _LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    LOGGING_LEVEL = _LOG_LEVEL_RAW if _LOG_LEVEL_RAW in _LOG_LEVELS else "INFO"
     
     @classmethod
     def validate(cls):

@@ -1,4 +1,6 @@
 from langgraph.graph import StateGraph, END
+import logging
+import time
 from src.orchestration.state import AgentState
 from src.agents.router import RouterAgent
 from src.agents.sql_agent import SQLAgent
@@ -10,6 +12,7 @@ class MultiAgentOrchestrator:
     """LangGraph-based multi-agent orchestration"""
     
     def __init__(self):
+        self.logger = logging.getLogger(__name__)
         self.router = RouterAgent()
         self.sql_agent = SQLAgent()
         self.rag_agent = RAGAgent()
@@ -19,45 +22,62 @@ class MultiAgentOrchestrator:
     
     def _route_query(self, state: AgentState) -> AgentState:
         """Route the query to appropriate agent"""
+        start_time = time.perf_counter()
         try:
             route_decision = self.router.route(state['user_query'])
             state['route_decision'] = route_decision
-            print(f"Routing decision: {route_decision['agent']} (confidence: {route_decision['confidence']})")
+            self.logger.info(
+                "Routing decision: %s (confidence: %s) in %.2fs",
+                route_decision.get('agent'),
+                route_decision.get('confidence'),
+                time.perf_counter() - start_time
+            )
         except Exception as e:
             state['error'] = f"Routing error: {str(e)}"
             state['route_decision'] = {'agent': 'RAG_AGENT', 'confidence': 'low'}
+            self.logger.exception("Routing error after %.2fs", time.perf_counter() - start_time)
         
         return state
     
     def _call_sql_agent(self, state: AgentState) -> AgentState:
         """Execute SQL agent"""
+        start_time = time.perf_counter()
         try:
+            self.logger.info("SQL agent start")
             result = self.sql_agent.query(
                 state['user_query'],
                 state.get('conversation_history')
             )
             state['sql_result'] = result
+            self.logger.info("SQL agent done in %.2fs", time.perf_counter() - start_time)
         except Exception as e:
             state['sql_result'] = f"SQL agent error: {str(e)}"
+            self.logger.exception("SQL agent error after %.2fs", time.perf_counter() - start_time)
         
         return state
     
     def _call_rag_agent(self, state: AgentState) -> AgentState:
         """Execute RAG agent"""
+        start_time = time.perf_counter()
         try:
+            self.logger.info("RAG agent start")
             result = self.rag_agent.query(
                 state['user_query'],
                 state.get('conversation_history')
             )
             state['rag_result'] = result
+            self.logger.info("RAG agent done in %.2fs", time.perf_counter() - start_time)
         except Exception as e:
             state['rag_result'] = f"RAG agent error: {str(e)}"
+            self.logger.exception("RAG agent error after %.2fs", time.perf_counter() - start_time)
         
         return state
     
     def _call_both_agents(self, state: AgentState) -> AgentState:
         """Execute both SQL and RAG agents"""
+        start_time = time.perf_counter()
         try:
+            self.logger.info("Both agents start")
             sql_result = self.sql_agent.query(
                 state['user_query'],
                 state.get('conversation_history')
@@ -69,14 +89,17 @@ class MultiAgentOrchestrator:
                 state.get('conversation_history')
             )
             state['rag_result'] = rag_result
+            self.logger.info("Both agents done in %.2fs", time.perf_counter() - start_time)
             
         except Exception as e:
             state['error'] = f"Error calling both agents: {str(e)}"
+            self.logger.exception("Both agents error after %.2fs", time.perf_counter() - start_time)
         
         return state
     
     def _synthesize_response(self, state: AgentState) -> AgentState:
         """Combine results from agents"""
+        start_time = time.perf_counter()
         
         if state.get('error'):
             state['final_response'] = f"Error: {state['error']}"
@@ -87,9 +110,11 @@ class MultiAgentOrchestrator:
         
         if agent_type == 'SQL_AGENT':
             state['final_response'] = state.get('sql_result', 'No response from SQL agent')
+            self.logger.info("Synthesis skipped (SQL-only) in %.2fs", time.perf_counter() - start_time)
         
         elif agent_type == 'RAG_AGENT':
             state['final_response'] = state.get('rag_result', 'No response from RAG agent')
+            self.logger.info("Synthesis skipped (RAG-only) in %.2fs", time.perf_counter() - start_time)
         
         elif agent_type == 'BOTH':
             sql_result = state.get('sql_result', '')
@@ -114,8 +139,10 @@ Provide a unified response that addresses the user's question completely."""
                     ]
                 )
                 state['final_response'] = response.choices[0].message.content
+                self.logger.info("Synthesis done in %.2fs", time.perf_counter() - start_time)
             except Exception as e:
                 state['final_response'] = f"{sql_result}\n\n{rag_result}"
+                self.logger.exception("Synthesis error after %.2fs", time.perf_counter() - start_time)
         
         return state
     
@@ -165,6 +192,7 @@ Provide a unified response that addresses the user's question completely."""
     
     def query(self, user_query: str, conversation_history=None) -> str:
         """Execute the multi-agent workflow"""
+        self.logger.info("User query received")
         
         initial_state = AgentState(
             user_query=user_query,
@@ -178,24 +206,31 @@ Provide a unified response that addresses the user's question completely."""
         
         try:
             result = self.graph.invoke(initial_state)
+            self.logger.info("Workflow completed")
             return result.get('final_response', 'No response generated')
         except Exception as e:
+            self.logger.exception("Workflow error")
             return f"Orchestration error: {str(e)}"
 
     def stream_query(self, user_query: str, conversation_history=None):
         """Stream response from the routed agent without full graph execution."""
+        self.logger.info("Streaming query received")
         route_decision = self.router.route(user_query)
         agent_type = route_decision.get('agent', 'RAG_AGENT')
+        self.logger.info("Streaming route: %s", agent_type)
 
         if agent_type == 'SQL_AGENT':
             yield from self.sql_agent.stream_query(user_query, conversation_history)
+            self.logger.info("Streaming SQL agent complete")
             return
 
         if agent_type == 'RAG_AGENT':
             yield from self.rag_agent.stream_query(user_query, conversation_history)
+            self.logger.info("Streaming RAG agent complete")
             return
 
         yield "Working on it..."
+        self.logger.info("Streaming BOTH path start")
         sql_result = self.sql_agent.query(user_query, conversation_history)
         rag_result = self.rag_agent.query(user_query, conversation_history)
 
@@ -225,3 +260,4 @@ Provide a unified response that addresses the user's question completely."""
                 continue
             buffer += delta
             yield buffer
+        self.logger.info("Streaming BOTH path complete")

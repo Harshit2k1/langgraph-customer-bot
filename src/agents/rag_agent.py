@@ -1,11 +1,14 @@
 from openai import OpenAI
 from src.config import Config
 from src.database.vector_db import VectorStore
+import logging
+import time
 
 class RAGAgent:
     """RAG agent for document retrieval and question answering"""
     
     def __init__(self):
+        self.logger = logging.getLogger(__name__)
         if not Config.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY not set")
         
@@ -15,17 +18,21 @@ class RAGAgent:
     def retrieve_documents(self, query, k=None):
         """Retrieve relevant documents from vector store"""
         k = k or Config.TOP_K_RETRIEVAL
+        start_time = time.perf_counter()
         
         try:
             results = self.vector_store.similarity_search(query, k=k)
             
             if not results:
+                self.logger.info("RAG retrieval returned 0 docs in %.2fs", time.perf_counter() - start_time)
                 return None
+
+            self.logger.info("RAG retrieval returned %s docs in %.2fs", len(results), time.perf_counter() - start_time)
             
             return results
             
         except Exception as e:
-            print(f"Error retrieving documents: {e}")
+            self.logger.exception("RAG retrieval error after %.2fs", time.perf_counter() - start_time)
             return None
     
     def format_context(self, retrieved_docs):
@@ -46,6 +53,7 @@ class RAGAgent:
     
     def query(self, user_question, conversation_history=None):
         """Answer questions using retrieved documents"""
+        self.logger.info("RAG query received")
         
         retrieved_docs = self.retrieve_documents(user_question)
         
@@ -81,14 +89,16 @@ Context from policy documents:
                 model=Config.OPENAI_MODEL,
                 messages=messages
             )
-            
+            self.logger.info("RAG response generated")
             return response.choices[0].message.content
             
         except Exception as e:
+            self.logger.exception("RAG query failed")
             return f"Error generating response: {str(e)}"
 
     def stream_query(self, user_question, conversation_history=None):
         """Stream answers using retrieved documents."""
+        self.logger.info("RAG streaming query received")
         retrieved_docs = self.retrieve_documents(user_question)
 
         if not retrieved_docs:
@@ -134,7 +144,10 @@ Context from policy documents:
                 buffer += delta
                 yield buffer
 
+            self.logger.info("RAG streaming completed")
+
         except Exception as e:
+            self.logger.exception("RAG streaming failed")
             yield f"Error generating response: {str(e)}"
     
     def get_sources(self, user_question):

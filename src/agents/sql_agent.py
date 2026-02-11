@@ -2,11 +2,14 @@ from openai import OpenAI
 from src.config import Config
 from src.database.sql_db import SQLDatabase
 import json
+import logging
+import time
 
 class SQLAgent:
     """SQL agent using OpenAI function calling for natural language to SQL"""
     
     def __init__(self):
+        self.logger = logging.getLogger(__name__)
         if not Config.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY not set")
         
@@ -91,26 +94,33 @@ Use JOINs to combine data from both tables when needed. Always use proper WHERE 
     
     def execute_sql_query(self, query, reasoning=None):
         """Execute SQL query with validation"""
+        start_time = time.perf_counter()
         is_valid, message = self.db.validate_query(query)
         
         if not is_valid:
+            self.logger.warning("SQL validation failed in %.2fs: %s", time.perf_counter() - start_time, message)
             return {"error": message, "query": query}
         
         result = self.db.execute_query(query)
         
         if isinstance(result, dict) and "error" in result:
+            self.logger.error("SQL execution error in %.2fs: %s", time.perf_counter() - start_time, result.get("error"))
             return result
+
+        row_count = len(result) if isinstance(result, list) else 0
+        self.logger.info("SQL executed in %.2fs (rows: %s)", time.perf_counter() - start_time, row_count)
         
         return {
             "success": True,
             "query": query,
             "reasoning": reasoning,
-            "row_count": len(result) if isinstance(result, list) else 0,
+            "row_count": row_count,
             "results": result
         }
     
     def query(self, user_question, conversation_history=None):
         """Process natural language query using function calling"""
+        self.logger.info("SQL query received")
         
         system_prompt = f"""You are a SQL expert assistant for a customer support system. 
 Generate and execute SQL queries to answer questions about customer data and support tickets.
@@ -141,6 +151,7 @@ Always use proper JOINs when information spans multiple tables."""
                 tools=self.get_tools_definition(),
                 tool_choice="auto"
             )
+            self.logger.info("SQL tool selection returned")
             
             response_message = response.choices[0].message
             
@@ -156,6 +167,8 @@ Always use proper JOINs when information spans multiple tables."""
                     function_args = json.loads(tool_call.function.arguments)
                     sql_query = function_args.get("query")
                     reasoning = function_args.get("reasoning")
+
+                    self.logger.info("Executing SQL tool")
                     
                     function_response = self.execute_sql_query(sql_query, reasoning)
                     
@@ -178,15 +191,18 @@ Always use proper JOINs when information spans multiple tables."""
                 model=Config.OPENAI_MODEL,
                 messages=messages
             )
+            self.logger.info("SQL final response generated")
             
             content = final_response.choices[0].message.content
             return self._strip_tool_json_prefix(content)
             
         except Exception as e:
+            self.logger.exception("SQL query failed")
             return f"Error processing query: {str(e)}"
 
     def stream_query(self, user_question, conversation_history=None):
         """Stream natural language responses while hiding tool JSON."""
+        self.logger.info("SQL streaming query received")
         yield "Working on it..."
 
         system_prompt = f"""You are a SQL expert assistant for a customer support system. 
@@ -218,6 +234,7 @@ Always use proper JOINs when information spans multiple tables."""
                 tools=self.get_tools_definition(),
                 tool_choice="auto"
             )
+            self.logger.info("SQL streaming tool selection returned")
 
             response_message = response.choices[0].message
 
@@ -236,6 +253,8 @@ Always use proper JOINs when information spans multiple tables."""
                     function_args = json.loads(tool_call.function.arguments)
                     sql_query = function_args.get("query")
                     reasoning = function_args.get("reasoning")
+
+                    self.logger.info("SQL streaming executing tool")
 
                     function_response = self.execute_sql_query(sql_query, reasoning)
 
@@ -270,7 +289,10 @@ Always use proper JOINs when information spans multiple tables."""
                 if cleaned:
                     yield cleaned
 
+            self.logger.info("SQL streaming completed")
+
         except Exception as e:
+            self.logger.exception("SQL streaming failed")
             yield f"Error processing query: {str(e)}"
     
     def get_database_stats(self):

@@ -4,6 +4,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+import logging
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
@@ -19,6 +20,14 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+logging.basicConfig(
+    level=getattr(logging, Config.LOGGING_LEVEL.upper(), logging.INFO),
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+)
+logger = logging.getLogger(__name__)
+if not Config.LOGGING_ENABLED:
+    logging.disable(logging.CRITICAL)
 
 def initialize_system():
     """Initialize the multi-agent system"""
@@ -316,6 +325,7 @@ def render_chat():
                 st.markdown(message["content"])
     
     if prompt := st.chat_input("Ask a question..."):
+        logger.info("User submitted prompt")
         SessionManager.add_message("user", prompt)
         
         with st.chat_message("user"):

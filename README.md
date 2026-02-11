@@ -50,6 +50,8 @@ pip install -r requirements.txt
 OPENAI_API_KEY=your_key_here
 OPENAI_MODEL=gpt-gpt-5-mini
 EMBEDDING_MODEL=all-MiniLM-L6-v2
+LOGGING_ENABLED=true
+LOGGING_LEVEL=INFO
 ```
 
 > The deafult config keys are loaded in `src/config.py`. Adjust the values above if your config differs.
@@ -86,6 +88,8 @@ Settings are read from `src/config.py` (via environment variables). Common keys:
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 - `EMBEDDING_MODEL`
+- `LOGGING_ENABLED` (true/false)
+- `LOGGING_LEVEL` (use standard Python levels: DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
 ## 📌 Notes
 
