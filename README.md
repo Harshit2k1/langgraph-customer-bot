@@ -2,6 +2,8 @@
 
 An AI-powered customer support assistant that combines **LangGraph orchestration**, **RAG over policy PDFs**, and **SQL customer data** to answer questions through a Streamlit UI.
 
+![UI Showcase](data/demo_image/Customer_Support_assistant.png)
+
 ## ✨ Features
 
 - **Natural language SQL queries** for customer profiles and support ticket data
