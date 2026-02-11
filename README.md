@@ -4,11 +4,15 @@ An AI-powered customer support assistant that combines **LangGraph orchestration
 
 ## ✨ Features
 
-- **Multi‑agent routing** between SQL data and policy documents
-- **RAG pipeline** with LanceDB vector store for persistent policy knowledge
+- **Natural language SQL queries** for customer profiles and support ticket data
+- Multi-agent orchestration with **LangGraph** (router decides: SQL, RAG, or both)
+- **RAG pipelin**e with **LanceDB** vector store for persistent policy knowledge
+- **Local embedding model** (sentence-transformers/all-mpnet-base-v2) for document vectorization
+- Context-aware responses combining **structured** and **unstructured data**
+- **MCP Server** for AI assistant integration
+- **Streamlit UI** with chat interface, document upload manager, and system statistics
 - **Temporary session documents** for quick uploads without saving
-- **Streamlit UI** with chat, upload manager, and system stats
-- **Synthetic data scripts** for quick demo setup
+- Synthetic customer data (profiles, support tickets) with generation scripts
 
 ## 🧱 Project structure
 
