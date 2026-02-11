@@ -114,6 +114,96 @@ def search_temp_documents(query, k=4):
     
     return results
 
+def delete_permanent_document(filename):
+    """Delete a specific document from permanent storage"""
+    try:
+        vector_store = st.session_state.orchestrator.rag_agent.vector_store
+        
+        indices_to_keep = []
+        docs_to_keep = []
+        metas_to_keep = []
+        ids_to_keep = []
+        
+        for i, metadata in enumerate(vector_store.metadatas):
+            if metadata['source'] != filename:
+                indices_to_keep.append(i)
+                docs_to_keep.append(vector_store.documents[i])
+                metas_to_keep.append(metadata)
+                ids_to_keep.append(vector_store.ids[i])
+        
+        if len(indices_to_keep) == len(vector_store.documents):
+            return False, "Document not found in vector store"
+        
+        import numpy as np
+        import faiss
+        
+        old_vectors = []
+        for i in indices_to_keep:
+            embedding = vector_store.embed_text(vector_store.documents[i])
+            old_vectors.append(embedding)
+        
+        if old_vectors:
+            embeddings_array = np.array(old_vectors).astype('float32')
+            new_index = faiss.IndexFlatL2(vector_store.dimension)
+            new_index.add(embeddings_array)
+            vector_store.index = new_index
+        else:
+            vector_store.index = faiss.IndexFlatL2(vector_store.dimension)
+        
+        vector_store.documents = docs_to_keep
+        vector_store.metadatas = metas_to_keep
+        vector_store.ids = ids_to_keep
+        
+        vector_store._save_index()
+        
+        file_path = f"./data/uploaded_pdfs/{filename}"
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
+        sample_policy_path = f"./data/sample_policies/{filename}"
+        if os.path.exists(sample_policy_path):
+            os.remove(sample_policy_path)
+        
+        return True, f"Successfully deleted {filename}"
+        
+    except Exception as e:
+        return False, f"Error deleting document: {str(e)}"
+
+def delete_temporary_document(filename):
+    """Delete a specific temporary document"""
+    try:
+        if 'temp_documents' not in st.session_state:
+            return False, "No temporary documents"
+        
+        original_count = len(st.session_state.temp_documents)
+        st.session_state.temp_documents = [
+            chunk for chunk in st.session_state.temp_documents 
+            if chunk['metadata']['source'] != filename
+        ]
+        
+        deleted_count = original_count - len(st.session_state.temp_documents)
+        
+        if deleted_count == 0:
+            return False, "Document not found"
+        
+        return True, f"Successfully deleted {filename} ({deleted_count} chunks)"
+        
+    except Exception as e:
+        return False, f"Error deleting document: {str(e)}"
+
+def get_all_permanent_files():
+    """Get list of all files in permanent vector store"""
+    try:
+        vector_store = st.session_state.orchestrator.rag_agent.vector_store
+        
+        unique_files = set()
+        for metadata in vector_store.metadatas:
+            unique_files.add(metadata['source'])
+        
+        return sorted(list(unique_files))
+    except Exception as e:
+        return []
+
 def render_sidebar():
     """Render sidebar with file upload and system info"""
     with st.sidebar:
@@ -152,7 +242,7 @@ def render_sidebar():
                             st.session_state.processed_files = []
                         st.session_state.processed_files.append(file_key)
                         
-                        if persist_mode:
+                        if persist_mode and uploaded_file.name not in st.session_state.uploaded_files:
                             st.session_state.uploaded_files.append(uploaded_file.name)
                     else:
                         st.error(message)
@@ -168,11 +258,11 @@ def render_sidebar():
                 
                 st.metric("Customers", sql_stats.get('customers', 'N/A'))
                 st.metric("Support Tickets", sql_stats.get('tickets', 'N/A'))
-                st.metric("Permanent Docs", vector_stats.get('total_documents', 'N/A'))
+                st.metric("Permanent Chunks", vector_stats.get('total_documents', 'N/A'))
                 
                 temp_count = len(st.session_state.get('temp_documents', []))
                 if temp_count > 0:
-                    st.metric("Temporary Docs", temp_count)
+                    st.metric("Temporary Chunks", temp_count)
                 
             except Exception as e:
                 st.warning("Unable to fetch stats")
@@ -183,32 +273,67 @@ def render_sidebar():
             SessionManager.clear_messages()
             st.rerun()
         
-        if st.button("🔄 Clear Temporary Docs", use_container_width=True):
+        if st.button("🔄 Clear All Temporary", use_container_width=True):
             if 'temp_documents' in st.session_state:
                 st.session_state.temp_documents = []
             if 'processed_files' in st.session_state:
                 st.session_state.processed_files = [f for f in st.session_state.processed_files if 'persist' in f]
-            st.success("Temporary documents cleared")
+            st.success("All temporary documents cleared")
             st.rerun()
         
         st.markdown("---")
         
         st.subheader("ℹ️ About")
         st.markdown("""
-        This multi-agent system uses:
-        - **LangGraph** for orchestration
-        - **OpenAI GPT** for language understanding
-        - **FAISS** for document retrieval
-        - **SQLite** for customer data
-        
-        The system automatically routes queries to the appropriate agent (SQL or RAG) based on intent.
+        Multi-agent system with:
+        - **LangGraph** orchestration
+        - **OpenAI GPT** understanding
+        - **FAISS** document retrieval
+        - **SQLite** customer data
         """)
         
-        if st.session_state.uploaded_files:
-            st.markdown("---")
-            st.subheader("📁 Permanent Files")
-            for file in st.session_state.uploaded_files:
-                st.text(f"✓ {file}")
+        st.markdown("---")
+        
+        all_permanent_files = get_all_permanent_files()
+        temp_files = []
+        if 'temp_documents' in st.session_state:
+            temp_files = list(set([chunk['metadata']['source'] for chunk in st.session_state.temp_documents]))
+        
+        if all_permanent_files or temp_files:
+            st.subheader("📁 Documents")
+            
+            if all_permanent_files:
+                st.markdown("**Permanent:**")
+                for file in all_permanent_files:
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.text(f"✓ {file}")
+                    with col2:
+                        if st.button("🗑️", key=f"del_perm_{file}", help=f"Delete {file}"):
+                            with st.spinner(f"Deleting {file}..."):
+                                success, message = delete_permanent_document(file)
+                                if success:
+                                    if file in st.session_state.uploaded_files:
+                                        st.session_state.uploaded_files.remove(file)
+                                    st.success(message)
+                                    st.rerun()
+                                else:
+                                    st.error(message)
+            
+            if temp_files:
+                st.markdown("**Temporary:**")
+                for file in temp_files:
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.text(f"📄 {file}")
+                    with col2:
+                        if st.button("🗑️", key=f"del_temp_{file}", help=f"Delete {file}"):
+                            success, message = delete_temporary_document(file)
+                            if success:
+                                st.success(message)
+                                st.rerun()
+                            else:
+                                st.error(message)
 
 def render_chat():
     """Render chat interface"""
