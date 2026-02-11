@@ -1,4 +1,5 @@
 import sqlite3
+import re
 from src.config import Config
 import json
 
@@ -83,17 +84,29 @@ class SQLDatabase:
         return schema
     
     def validate_query(self, query):
-        """Basic safety validation for SQL queries"""
+        """Validate SQL query with proper word boundary checking"""
         query_lower = query.lower().strip()
-        
-        forbidden_keywords = ['drop', 'delete', 'update', 'insert', 'alter', 'create', 'truncate', 'replace']
-        
-        for keyword in forbidden_keywords:
-            if keyword in query_lower:
-                return False, f"Operation not allowed: {keyword.upper()}"
         
         if not query_lower.startswith('select'):
             return False, "Only SELECT queries are allowed"
+        
+        forbidden_patterns = [
+            r'\bdrop\b',
+            r'\bdelete\b',
+            r'\bupdate\b',
+            r'\binsert\b',
+            r'\balter\b',
+            r'\bcreate\b',
+            r'\btruncate\b',
+            r'\breplace\b',
+            r'\bexec\b',
+            r'\bexecute\b'
+        ]
+        
+        for pattern in forbidden_patterns:
+            if re.search(pattern, query_lower):
+                keyword = pattern.replace(r'\b', '').upper()
+                return False, f"Operation not allowed: {keyword}"
         
         return True, "Valid query"
     
