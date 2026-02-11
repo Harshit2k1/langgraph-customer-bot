@@ -321,6 +321,7 @@ def render_chat():
             st.markdown(prompt)
         
         with st.chat_message("assistant"):
+            message_placeholder = st.empty()
             with st.spinner("Thinking..."):
                 conversation_history = SessionManager.get_conversation_history()
                 
@@ -358,7 +359,7 @@ def render_chat():
                         conversation_history[:-1] if len(conversation_history) > 1 else None
                     )
                 
-                st.markdown(response)
+                message_placeholder.markdown(response)
         
         SessionManager.add_message("assistant", response)
 
