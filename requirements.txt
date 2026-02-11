@@ -9,8 +9,6 @@ sentence-transformers
 torch
 transformers
 
-faiss-cpu
-
 sqlalchemy
 
 pypdf
@@ -18,7 +16,11 @@ fpdf2
 
 mcp
 
+lancedb
+pyarrow
+
 pydantic
+
 typing-extensions
 
 streamlit

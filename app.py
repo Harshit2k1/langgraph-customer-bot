@@ -119,42 +119,10 @@ def delete_permanent_document(filename):
     try:
         vector_store = st.session_state.orchestrator.rag_agent.vector_store
         
-        indices_to_keep = []
-        docs_to_keep = []
-        metas_to_keep = []
-        ids_to_keep = []
+        success = vector_store.delete_by_source(filename)
         
-        for i, metadata in enumerate(vector_store.metadatas):
-            if metadata['source'] != filename:
-                indices_to_keep.append(i)
-                docs_to_keep.append(vector_store.documents[i])
-                metas_to_keep.append(metadata)
-                ids_to_keep.append(vector_store.ids[i])
-        
-        if len(indices_to_keep) == len(vector_store.documents):
+        if not success:
             return False, "Document not found in vector store"
-        
-        import numpy as np
-        import faiss
-        
-        old_vectors = []
-        for i in indices_to_keep:
-            embedding = vector_store.embed_text(vector_store.documents[i])
-            old_vectors.append(embedding)
-        
-        if old_vectors:
-            embeddings_array = np.array(old_vectors).astype('float32')
-            new_index = faiss.IndexFlatL2(vector_store.dimension)
-            new_index.add(embeddings_array)
-            vector_store.index = new_index
-        else:
-            vector_store.index = faiss.IndexFlatL2(vector_store.dimension)
-        
-        vector_store.documents = docs_to_keep
-        vector_store.metadatas = metas_to_keep
-        vector_store.ids = ids_to_keep
-        
-        vector_store._save_index()
         
         file_path = f"./data/uploaded_pdfs/{filename}"
         if os.path.exists(file_path):
@@ -168,6 +136,8 @@ def delete_permanent_document(filename):
         
     except Exception as e:
         return False, f"Error deleting document: {str(e)}"
+
+
 
 def delete_temporary_document(filename):
     """Delete a specific temporary document"""
@@ -195,14 +165,11 @@ def get_all_permanent_files():
     """Get list of all files in permanent vector store"""
     try:
         vector_store = st.session_state.orchestrator.rag_agent.vector_store
-        
-        unique_files = set()
-        for metadata in vector_store.metadatas:
-            unique_files.add(metadata['source'])
-        
-        return sorted(list(unique_files))
+        return vector_store.get_all_sources()
     except Exception as e:
         return []
+
+
 
 def render_sidebar():
     """Render sidebar with file upload and system info"""
@@ -288,7 +255,7 @@ def render_sidebar():
         Multi-agent system with:
         - **LangGraph** orchestration
         - **OpenAI GPT** understanding
-        - **FAISS** document retrieval
+        - **LanceDB** for vector storage
         - **SQLite** customer data
         """)
         
