@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
@@ -321,46 +322,82 @@ def render_chat():
             st.markdown(prompt)
         
         with st.chat_message("assistant"):
+            status_placeholder = st.empty()
             message_placeholder = st.empty()
-            with st.spinner("Thinking..."):
-                conversation_history = SessionManager.get_conversation_history()
-                
-                has_temp_docs = 'temp_documents' in st.session_state and len(st.session_state.temp_documents) > 0
-                
-                if has_temp_docs:
-                    temp_results = search_temp_documents(prompt)
-                    
-                    if temp_results:
-                        from openai import OpenAI
-                        client = OpenAI(api_key=Config.OPENAI_API_KEY)
-                        
-                        context = "\n\n".join([
-                            f"[Source: {r['metadata']['source']}, Page {r['metadata']['page']}]\n{r['document']}"
-                            for r in temp_results
-                        ])
-                        
-                        temp_response = client.chat.completions.create(
-                            model=Config.OPENAI_MODEL,
-                            messages=[
-                                {"role": "system", "content": f"Answer based on this context:\n\n{context}"},
-                                {"role": "user", "content": prompt}
-                            ]
-                        )
-                        
-                        response = "📄 **From Temporary Document:**\n\n" + temp_response.choices[0].message.content
-                    else:
-                        response = st.session_state.orchestrator.query(
-                            prompt,
-                            conversation_history[:-1] if len(conversation_history) > 1 else None
-                        )
+            status_placeholder.markdown("⏳ **Thinking...**")
+
+            cursor_char = "▍"
+            cursor_blink_interval = 0.6
+            last_blink = 0.0
+            show_cursor = True
+
+            def render_with_cursor(text: str, prefix: str = "") -> None:
+                nonlocal last_blink, show_cursor
+                now = time.time()
+                if now - last_blink >= cursor_blink_interval:
+                    show_cursor = not show_cursor
+                    last_blink = now
+                cursor = cursor_char if show_cursor else " "
+                message_placeholder.markdown(f"{prefix}{text}{cursor}")
+
+            conversation_history = SessionManager.get_conversation_history()
+
+            has_temp_docs = 'temp_documents' in st.session_state and len(st.session_state.temp_documents) > 0
+
+            response = ""
+
+            render_with_cursor("")
+
+            if has_temp_docs:
+                status_placeholder.markdown("🔎 **Searching temporary documents...**")
+                temp_results = search_temp_documents(prompt)
+
+                if temp_results:
+                    status_placeholder.markdown("🧠 **Generating response...**")
+                    from openai import OpenAI
+                    client = OpenAI(api_key=Config.OPENAI_API_KEY)
+
+                    context = "\n\n".join([
+                        f"[Source: {r['metadata']['source']}, Page {r['metadata']['page']}]\n{r['document']}"
+                        for r in temp_results
+                    ])
+
+                    stream = client.chat.completions.create(
+                        model=Config.OPENAI_MODEL,
+                        messages=[
+                            {"role": "system", "content": f"Answer based on this context:\n\n{context}"},
+                            {"role": "user", "content": prompt}
+                        ],
+                        stream=True
+                    )
+
+                    render_with_cursor(response, "📄 **From Temporary Document:**\n\n")
+                    for event in stream:
+                        delta = event.choices[0].delta.content if event.choices else ""
+                        if not delta:
+                            continue
+                        response += delta
+                        render_with_cursor(response, "📄 **From Temporary Document:**\n\n")
                 else:
-                    response = st.session_state.orchestrator.query(
+                    status_placeholder.markdown("🧠 **Generating response...**")
+                    for chunk in st.session_state.orchestrator.stream_query(
                         prompt,
                         conversation_history[:-1] if len(conversation_history) > 1 else None
-                    )
-                
-                message_placeholder.markdown(response)
-        
+                    ):
+                        response = chunk
+                        render_with_cursor(response)
+            else:
+                status_placeholder.markdown("🧠 **Generating response...**")
+                for chunk in st.session_state.orchestrator.stream_query(
+                    prompt,
+                    conversation_history[:-1] if len(conversation_history) > 1 else None
+                ):
+                    response = chunk
+                    render_with_cursor(response)
+
+            status_placeholder.empty()
+            message_placeholder.markdown(response)
+
         SessionManager.add_message("assistant", response)
 
 def main():

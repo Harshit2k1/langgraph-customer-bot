@@ -184,6 +184,94 @@ Always use proper JOINs when information spans multiple tables."""
             
         except Exception as e:
             return f"Error processing query: {str(e)}"
+
+    def stream_query(self, user_question, conversation_history=None):
+        """Stream natural language responses while hiding tool JSON."""
+        yield "Working on it..."
+
+        system_prompt = f"""You are a SQL expert assistant for a customer support system. 
+Generate and execute SQL queries to answer questions about customer data and support tickets.
+
+Database Schema:
+{json.dumps(self.schema, indent=2)}
+
+When answering:
+1. Use the execute_sql_query function to get data
+2. Format results in a clear, user-friendly way
+3. If multiple rows are returned, summarize key information
+4. Include relevant details like customer names, ticket IDs, dates
+5. If no results found, explain that clearly
+
+Always use proper JOINs when information spans multiple tables."""
+
+        messages = [{"role": "system", "content": system_prompt}]
+
+        if conversation_history:
+            messages.extend(conversation_history[-Config.MEMORY_WINDOW:])
+
+        messages.append({"role": "user", "content": user_question})
+
+        try:
+            response = self.client.chat.completions.create(
+                model=Config.OPENAI_MODEL,
+                messages=messages,
+                tools=self.get_tools_definition(),
+                tool_choice="auto"
+            )
+
+            response_message = response.choices[0].message
+
+            if not response_message.tool_calls:
+                content = self._strip_tool_json_prefix(response_message.content or "")
+                if content:
+                    yield content
+                return
+
+            messages.append(response_message)
+
+            for tool_call in response_message.tool_calls:
+                function_name = tool_call.function.name
+
+                if function_name == "execute_sql_query":
+                    function_args = json.loads(tool_call.function.arguments)
+                    sql_query = function_args.get("query")
+                    reasoning = function_args.get("reasoning")
+
+                    function_response = self.execute_sql_query(sql_query, reasoning)
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": function_name,
+                        "content": json.dumps(function_response)
+                    })
+
+            messages.append({
+                "role": "system",
+                "content": (
+                    "Provide a user-facing answer only. "
+                    "Do not include raw JSON, SQL, tool call arguments, or tool outputs."
+                )
+            })
+
+            stream = self.client.chat.completions.create(
+                model=Config.OPENAI_MODEL,
+                messages=messages,
+                stream=True
+            )
+
+            buffer = ""
+            for event in stream:
+                delta = event.choices[0].delta.content if event.choices else ""
+                if not delta:
+                    continue
+                buffer += delta
+                cleaned = self._strip_tool_json_prefix(buffer)
+                if cleaned:
+                    yield cleaned
+
+        except Exception as e:
+            yield f"Error processing query: {str(e)}"
     
     def get_database_stats(self):
         """Get current database statistics"""

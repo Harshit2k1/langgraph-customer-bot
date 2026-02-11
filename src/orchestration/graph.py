@@ -181,3 +181,47 @@ Provide a unified response that addresses the user's question completely."""
             return result.get('final_response', 'No response generated')
         except Exception as e:
             return f"Orchestration error: {str(e)}"
+
+    def stream_query(self, user_query: str, conversation_history=None):
+        """Stream response from the routed agent without full graph execution."""
+        route_decision = self.router.route(user_query)
+        agent_type = route_decision.get('agent', 'RAG_AGENT')
+
+        if agent_type == 'SQL_AGENT':
+            yield from self.sql_agent.stream_query(user_query, conversation_history)
+            return
+
+        if agent_type == 'RAG_AGENT':
+            yield from self.rag_agent.stream_query(user_query, conversation_history)
+            return
+
+        yield "Working on it..."
+        sql_result = self.sql_agent.query(user_query, conversation_history)
+        rag_result = self.rag_agent.query(user_query, conversation_history)
+
+        synthesis_prompt = f"""Combine these two responses into a single, coherent answer:
+
+SQL Agent Response (Customer Data):
+{sql_result}
+
+RAG Agent Response (Policy Information):
+{rag_result}
+
+Provide a unified response that addresses the user's question completely."""
+
+        stream = self.client.chat.completions.create(
+            model=Config.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that combines information from multiple sources."},
+                {"role": "user", "content": synthesis_prompt}
+            ],
+            stream=True
+        )
+
+        buffer = ""
+        for event in stream:
+            delta = event.choices[0].delta.content if event.choices else ""
+            if not delta:
+                continue
+            buffer += delta
+            yield buffer
