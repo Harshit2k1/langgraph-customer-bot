@@ -37,7 +37,7 @@ def ingest_sample_policies():
         metadatas = [chunk['metadata'] for chunk in all_chunks]
         ids = [f"chunk_{i}" for i in range(len(all_chunks))]
         
-        print("Ingesting documents into ChromaDB...")
+        print("Ingesting documents into LanceDB ...")
         success = vector_store.add_documents(documents, metadatas, ids)
         
         if success:

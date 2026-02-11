@@ -10,7 +10,7 @@ class Config:
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
     
     DATABASE_PATH = os.getenv("DATABASE_PATH", "./data/database/customer_support.db")
-    VECTOR_STORE_PATH = os.getenv("VECTOR_STORE_PATH", "./vectorstore/chroma_db")
+    VECTOR_STORE_PATH = os.getenv("VECTOR_STORE_PATH", "./vectorstore/lance_db")
     
     CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 1000))
     CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 200))
